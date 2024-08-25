@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate My Professor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        .container {
+            width: 80%;
+            margin: auto;
+            overflow: hidden;
+            padding: 20px;
+        }
+        header {
+            background: #35424a;
+            color: #ffffff;
+            padding-top: 30px;
+            min-height: 70px;
+            border-bottom: #e8491d 3px solid;
+        }
+        header h1 {
+            margin: 0;
+            text-align: center;
+            padding-bottom: 20px;
+        }
+        .main {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        .professor-list, .rating-form, .professor-details {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .professor-list {
+            flex: 1;
+            margin-right: 20px;
+        }
+        .rating-form {
+            flex: 1;
+        }
+        .professor-details {
+            flex: 2;
+        }
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            display: inline-block;
+            background: #e8491d;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #ff6a3c;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            background: #f4f4f4;
+            margin: 5px 0;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        li:hover {
+            background: #e8e8e8;
+        }
+        .selected {
+            background: #35424a;
+            color: #fff;
+        }
+        #ratingChart {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Rate My Professor</h1>
+        </div>
+    </header>
+
+    <div class="container main">
+        <div class="professor-list">
+            <h2>Professors</h2>
+            <ul id="professorList"></ul>
+            <input type="text" id="newProfessorName" placeholder="New Professor Name">
+            <button onclick="addProfessor()">Add Professor</button>
+        </div>
+
+        <div class="rating-form">
+            <h2>Rate a Professor</h2>
+            <select id="professorSelect"></select>
+            <input type="number" id="teachingRating" min="1" max="5" placeholder="Teaching (1-5)">
+            <input type="number" id="difficultyRating" min="1" max="5" placeholder="Difficulty (1-5)">
+            <textarea id="comment" placeholder="Leave a comment"></textarea>
+            <button onclick="submitRating()">Submit Rating</button>
+        </div>
+
+        <div class="professor-details">
+            <h2 id="selectedProfessorName">Select a Professor</h2>
+            <div id="professorStats"></div>
+            <canvas id="ratingChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let professors = [];
+        let selectedProfessor = null;
+        let chart = null;
+
+        function addProfessor() {
+            const name = document.getElementById('newProfessorName').value;
+            if (name) {
+                professors.push({ name, ratings: [] });
+                updateProfessorList();
+                document.getElementById('newProfessorName').value = '';
+            }
+        }
+
+        function updateProfessorList() {
+            const list = document.getElementById('professorList');
+            const select = document.getElementById('professorSelect');
+            list.innerHTML = '';
+            select.innerHTML = '<option value="">Select a Professor</option>';
+            professors.forEach((prof, index) => {
+                const li = document.createElement('li');
+                li.textContent = prof.name;
+                li.onclick = () => selectProfessor(index);
+                list.appendChild(li);
+
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = prof.name;
+                select.appendChild(option);
+            });
+        }
+
+        function selectProfessor(index) {
+            selectedProfessor = professors[index];
+            document.querySelectorAll('#professorList li').forEach((li, i) => {
+                li.classList.toggle('selected', i === index);
+            });
+            updateProfessorDetails();
+        }
+
+        function submitRating() {
+            const professorIndex = document.getElementById('professorSelect').value;
+            const teaching = parseInt(document.getElementById('teachingRating').value);
+            const difficulty = parseInt(document.getElementById('difficultyRating').value);
+            const comment = document.getElementById('comment').value;
+
+            if (professorIndex && teaching && difficulty) {
+                professors[professorIndex].ratings.push({ teaching, difficulty, comment });
+                updateProfessorDetails();
+                clearRatingForm();
+            }
+        }
+
+        function clearRatingForm() {
+            document.getElementById('professorSelect').value = '';
+            document.getElementById('teachingRating').value = '';
+            document.getElementById('difficultyRating').value = '';
+            document.getElementById('comment').value = '';
+        }
+
+        function updateProfessorDetails() {
+            if (!selectedProfessor) return;
+
+            const statsDiv = document.getElementById('professorStats');
+            document.getElementById('selectedProfessorName').textContent = selectedProfessor.name;
+
+            if (selectedProfessor.ratings.length === 0) {
+                statsDiv.innerHTML = '<p>No ratings yet.</p>';
+                if (chart) chart.destroy();
+                return;
+            }
+
+            const avgTeaching = average(selectedProfessor.ratings.map(r => r.teaching));
+            const avgDifficulty = average(selectedProfessor.ratings.map(r => r.difficulty));
+
+            statsDiv.innerHTML = `
+                <p>Average Teaching Rating: ${avgTeaching.toFixed(2)}</p>
+                <p>Average Difficulty Rating: ${avgDifficulty.toFixed(2)}</p>
+                <h3>Comments:</h3>
+                <ul>${selectedProfessor.ratings.map(r => `<li>${r.comment}</li>`).join('')}</ul>
+            `;
+
+            updateChart();
+        }
+
+        function average(arr) {
+            return arr.reduce((a, b) => a + b, 0) / arr.length;
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('ratingChart').getContext('2d');
+            
+            if (chart) chart.destroy();
+
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Teaching', 'Difficulty'],
+                    datasets: [{
+                        label: 'Ratings',
+                        data: [
+                            average(selectedProfessor.ratings.map(r => r.teaching)),
+                            average(selectedProfessor.ratings.map(r => r.difficulty))
+                        ],
+                        backgroundColor: [
+                            'rgba(75, 192, 192, 0.6)',
+                            'rgba(255, 99, 132, 0.6)'
+                        ]
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 5
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize the app
+        updateProfessorList();
+    </script>
+</body>
+</html>
